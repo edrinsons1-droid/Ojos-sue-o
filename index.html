@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detector de Somnolencia con IA</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-wrapper">
+        <header>
+            <h1 class="gradient-text">Detector de Somnolencia con IA</h1>
+            <p class="subtitle">Análisis visual en tiempo real para prevención de accidentes</p>
+        </header>
+        
+        <main>
+            <div class="card central-card">
+                <div class="video-section">
+                    <div id="webcam-container">
+                        <div class="loader-overlay" id="loader" style="display: none;">
+                            <div class="spinner"></div>
+                            <span>Cargando Modelo IA...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-badge normal" id="status-indicator">
+                        <div class="icon-container" id="status-icon">
+                            <!-- SVG Ojo Abierto (por defecto) -->
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </div>
+                        <span id="status-text" class="status-message">Inicializando...</span>
+                    </div>
+
+                    <div class="progress-container">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+                    
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <span class="metric-label">Segundos Cerrado</span>
+                            <span class="metric-value" id="timer-val">0.0s</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">Confiabilidad AI</span>
+                            <span class="metric-value" id="confidence-val">--%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="actions">
+                        <button id="start-btn" class="btn primary-btn" onclick="init()">Iniciar Monitoreo</button>
+                        <button id="reset-btn" class="btn secondary-btn hidden" onclick="manualReset()">Reiniciar Sistema</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <div id="toast" class="toast hidden">
+            <span class="toast-icon">✉️</span> 
+            <span id="toast-msg">Notificación enviada</span>
+        </div>
+    </div>
+
+    <!-- Cargar TensorFlow.js y Teachable Machine -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
