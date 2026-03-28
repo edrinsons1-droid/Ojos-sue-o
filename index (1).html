@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DriveSafe — Detección de Somnolencia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <!-- TensorFlow.js y Teachable Machine -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <style>
+    /* ===================== VARIABLES ===================== */
+    :root {
+      --bg:        #0a0c10;
+      --surface:   #111318;
+      --surface2:  #181c24;
+      --border:    rgba(255,255,255,0.07);
+      --accent:    #00e5ff;
+      --accent2:   #7b61ff;
+      --danger:    #ff3b5c;
+      --safe:      #00e096;
+      --text:      #e8eaf0;
+      --muted:     #6b7280;
+      --font-head: 'Syne', sans-serif;
+      --font-body: 'DM Sans', sans-serif;
+    }
+
+    /* ===================== RESET ===================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      overflow-x: hidden;
+    }
+
+    /* ===================== GRID BG ===================== */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ===================== LAYOUT ===================== */
+    .app {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===================== HEADER ===================== */
+    header {
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: var(--font-head);
+      font-weight: 800;
+      font-size: 1.4rem;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 20px;
+    }
+
+    /* ===================== MAIN ===================== */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 24px;
+      padding: 32px 40px;
+      align-items: start;
+    }
+
+    /* ===================== CAMERA CARD ===================== */
+    .camera-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .camera-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .camera-title {
+      font-family: var(--font-head);
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      transition: all 0.3s ease;
+    }
+    .status-pill .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .status-pill.active .dot  { background: var(--safe); box-shadow: 0 0 8px var(--safe); }
+    .status-pill.danger .dot  { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: blink 0.5s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* camera wrapper */
+    .camera-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16/10;
+      background: #07090d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #webcam-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    #webcam-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Corners overlay */
+    .corner { position: absolute; width: 24px; height: 24px; z-index: 5; }
+    .corner.tl { top: 16px; left: 16px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .corner.tr { top: 16px; right: 16px; border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+    .corner.bl { bottom: 16px; left: 16px; border-bottom: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .corner.br { bottom: 16px; right: 16px; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+
+    /* Placeholder */
+    .camera-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      color: var(--muted);
+      width: 100%;
+      height: 100%;
+    }
+    .camera-placeholder svg { opacity: 0.3; }
+    .camera-placeholder p { font-size: 0.9rem; }
+
+    /* Alert overlay */
+    .alert-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,59,92,0.12);
+      border: 2px solid var(--danger);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 10;
+    }
+    .alert-overlay.visible { opacity: 1; }
+    .alert-overlay .alert-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: var(--danger);
+      display: flex; align-items: center; justify-content: center;
+      animation: shake 0.4s infinite;
+      font-size: 1.8rem;
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      25%      { transform: translateX(-6px); }
+      75%      { transform: translateX(6px); }
+    }
+    .alert-overlay .alert-text {
+      font-family: var(--font-head);
+      font-weight: 800;
+      font-size: 1.6rem;
+      color: #fff;
+      text-shadow: 0 0 20px var(--danger);
+      letter-spacing: -0.02em;
+    }
+    .alert-overlay .alert-sub {
+      color: rgba(255,255,255,0.7);
+      font-size: 0.9rem;
+    }
+
+    /* camera footer */
+    .camera-footer {
+      padding: 14px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .timer-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .timer-label { font-weight: 500; }
+    #closed-timer {
+      font-family: var(--font-head);
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text);
+      min-width: 60px;
+      transition: color 0.3s;
+    }
+    #closed-timer.danger { color: var(--danger); }
+
+    /* ===================== BTN ===================== */
+    .btn {
+      font-family: var(--font-head);
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      padding: 12px 24px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+    }
+    .btn-primary:hover { background: #33eaff; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,229,255,0.35); }
+    .btn-danger {
+      background: var(--surface2);
+      color: var(--danger);
+      border: 1px solid rgba(255,59,92,0.3);
+    }
+    .btn-danger:hover { background: rgba(255,59,92,0.15); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+    /* ===================== SIDEBAR ===================== */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-head);
+      font-weight: 700;
+      font-size: 0.9rem;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .panel-body { padding: 20px; }
+
+    /* Confidence bars */
+    .conf-item { margin-bottom: 16px; }
+    .conf-item:last-child { margin-bottom: 0; }
+    .conf-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+    .conf-name { font-weight: 500; }
+    .conf-pct  {
+      font-family: var(--font-head);
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .conf-bar-bg {
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .conf-bar {
+      height: 100%;
+      border-radius: 10px;
+      transition: width 0.2s ease, background 0.3s;
+      width: 0%;
+    }
+    .conf-bar.open   { background: var(--safe); }
+    .conf-bar.closed { background: var(--danger); }
+
+    /* Stats grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .stat-label {
+      font-size: 0.72rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-family: var(--font-head);
+      font-weight: 800;
+      font-size: 1.4rem;
+      letter-spacing: -0.02em;
+    }
+    .stat-value.accent  { color: var(--accent); }
+    .stat-value.danger  { color: var(--danger); }
+    .stat-value.safe    { color: var(--safe); }
+
+    /* Email form */
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .form-control {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-control:focus { border-color: var(--accent); }
+    .form-control::placeholder { color: var(--muted); }
+
+    /* Log */
+    .log-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .log-list::-webkit-scrollbar { width: 4px; }
+    .log-list::-webkit-scrollbar-track { background: transparent; }
+    .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .log-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      padding: 8px 10px;
+      background: var(--surface2);
+      border-radius: 8px;
+    }
+    .log-item .log-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .log-item.alert-log .log-dot  { background: var(--danger); }
+    .log-item.info-log .log-dot   { background: var(--accent); }
+    .log-item .log-time {
+      font-family: var(--font-head);
+      font-weight: 700;
+      font-size: 0.75rem;
+      color: var(--text);
+      min-width: 50px;
+    }
+
+    .empty-log {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      padding: 20px 0;
+    }
+
+    /* ===================== TOAST ===================== */
+    .toast {
+      position: fixed;
+      bottom: 32px;
+      right: 32px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 280px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all 0.35s cubic-bezier(0.22,1,0.36,1);
+      z-index: 100;
+      pointer-events: none;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast-icon { font-size: 1.4rem; }
+    .toast-title { font-family: var(--font-head); font-weight: 700; font-size: 0.9rem; }
+    .toast-msg   { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+    /* ===================== FOOTER ===================== */
+    footer {
+      padding: 16px 40px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    footer span { display: flex; align-items: center; gap: 6px; }
+
+    /* ===================== RESPONSIVE ===================== */
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; padding: 20px; }
+      header, footer { padding: 16px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-dot"></div>
+      DriveSafe<span style="color:var(--accent);">AI</span>
+    </div>
+    <span class="badge">Detección de Somnolencia v1.0</span>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+
+    <!-- CAMERA CARD -->
+    <div class="camera-card">
+      <div class="camera-header">
+        <span class="camera-title">Monitoreo en Tiempo Real</span>
+        <div class="status-pill" id="status-pill">
+          <div class="dot"></div>
+          <span id="status-text">Inactivo</span>
+        </div>
+      </div>
+
+      <div class="camera-wrapper" id="camera-wrapper">
+        <!-- Corners -->
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+
+        <!-- Webcam canvas goes here -->
+        <div id="webcam-container">
+          <div class="camera-placeholder" id="cam-placeholder">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+            <p>Presiona <strong style="color:var(--text)">Iniciar</strong> para activar la cámara</p>
+          </div>
+        </div>
+
+        <!-- Alert overlay -->
+        <div class="alert-overlay" id="alert-overlay">
+          <div class="alert-icon">😴</div>
+          <div class="alert-text">¡ALERTA DE SOMNOLENCIA!</div>
+          <div class="alert-sub">Ojos cerrados por varios segundos</div>
+        </div>
+      </div>
+
+      <div class="camera-footer">
+        <div class="timer-wrap">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" opacity="0.5">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span class="timer-label">Ojos cerrados:</span>
+          <span id="closed-timer">0.0s</span>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-primary" id="btn-start" onclick="startMonitoring()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Iniciar
+          </button>
+          <button class="btn btn-danger" id="btn-stop" onclick="stopMonitoring()" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
+            Detener
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+
+      <!-- CONFIDENCE -->
+      <div class="panel">
+        <div class="panel-header">Confianza del Modelo</div>
+        <div class="panel-body">
+          <div class="conf-item">
+            <div class="conf-label">
+              <span class="conf-name">👁️ Ojos Abiertos</span>
+              <span class="conf-pct" id="pct-open">0%</span>
+            </div>
+            <div class="conf-bar-bg"><div class="conf-bar open" id="bar-open"></div></div>
+          </div>
+          <div class="conf-item">
+            <div class="conf-label">
+              <span class="conf-name">😴 Ojos Cerrados</span>
+              <span class="conf-pct" id="pct-closed">0%</span>
+            </div>
+            <div class="conf-bar-bg"><div class="conf-bar closed" id="bar-closed"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <div class="panel">
+        <div class="panel-header">Estadísticas de Sesión</div>
+        <div class="panel-body">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Estado Actual</div>
+              <div class="stat-value safe" id="stat-estado">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Alertas Enviadas</div>
+              <div class="stat-value danger" id="stat-alertas">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Tiempo Activo</div>
+              <div class="stat-value accent" id="stat-tiempo">0s</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Máx. Ojos Cerrados</div>
+              <div class="stat-value" id="stat-max">0.0s</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EMAIL FORM -->
+      <div class="panel">
+        <div class="panel-header">⚙️ Configuración de Alertas</div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label>Correo de Alerta</label>
+            <input type="email" class="form-control" id="email-input" placeholder="conductor@email.com" value="">
+          </div>
+          <div class="form-group">
+            <label>Umbral de alerta (segundos)</label>
+            <input type="number" class="form-control" id="threshold-input" min="1" max="10" value="3">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>URL Formspree</label>
+            <input type="text" class="form-control" id="formspree-url"
+              placeholder="https://formspree.io/f/mwvwvblz"
+              value="https://formspree.io/f/mwvwvblz">
+          </div>
+        </div>
+      </div>
+
+      <!-- LOG -->
+      <div class="panel">
+        <div class="panel-header">📋 Registro de Alertas</div>
+        <div class="panel-body" style="padding:16px;">
+          <ul class="log-list" id="log-list">
+            <li class="empty-log">Sin alertas registradas</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    <span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      Reemplaza la URL del modelo en el código JS con tu modelo de Teachable Machine
+    </span>
+    <span>DriveSafe AI © 2025</span>
+  </footer>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast">
+  <div class="toast-icon" id="toast-icon">📧</div>
+  <div>
+    <div class="toast-title" id="toast-title">Alerta enviada</div>
+    <div class="toast-msg"   id="toast-msg">Correo enviado correctamente</div>
+  </div>
+</div>
+
+<!-- AUDIO (beep generado por Web Audio API) -->
+
+<script>
+// ================================================================
+//  ⚙️  CONFIGURACIÓN — CAMBIA ESTAS LÍNEAS
+// ================================================================
+// 1. Entrena tu modelo en teachablemachine.withgoogle.com
+//    (Image Project → 2 clases: "Ojos Abiertos" y "Ojos Cerrados")
+// 2. Sube el modelo y copia la URL aquí:
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/1vv7Cwhsa/";
+//    ↑ Reemplaza XXXXXX con el ID de tu modelo
+
+// 3. Los nombres EXACTOS de tus clases en Teachable Machine:
+const CLASS_OPEN   = "Ojos Abiertos";   // ← debe coincidir EXACTAMENTE con tu clase en Teachable Machine
+const CLASS_CLOSED = "Ojos Cerrados";   // ← debe coincidir EXACTAMENTE con tu clase en Teachable Machine
+// ================================================================
+
+let model, webcam, labelContainer, maxPredictions;
+let isRunning        = false;
+let closedStartTime  = null;
+let closedSeconds    = 0;
+let alertSent        = false;
+let alertCount       = 0;
+let sessionStart     = null;
+let maxClosed        = 0;
+let animFrameId      = null;
+let sessionInterval  = null;
+
+const CONFIDENCE_THRESHOLD = 0.70; // mínima confianza para considerar válida
+
+// ---- DOM refs ----
+const btnStart      = document.getElementById("btn-start");
+const btnStop       = document.getElementById("btn-stop");
+const statusPill    = document.getElementById("status-pill");
+const statusText    = document.getElementById("status-text");
+const alertOverlay  = document.getElementById("alert-overlay");
+const timerEl       = document.getElementById("closed-timer");
+const barOpen       = document.getElementById("bar-open");
+const barClosed     = document.getElementById("bar-closed");
+const pctOpen       = document.getElementById("pct-open");
+const pctClosed     = document.getElementById("pct-closed");
+const statEstado    = document.getElementById("stat-estado");
+const statAlertas   = document.getElementById("stat-alertas");
+const statTiempo    = document.getElementById("stat-tiempo");
+const statMax       = document.getElementById("stat-max");
+const logList       = document.getElementById("log-list");
+const placeholder   = document.getElementById("cam-placeholder");
+
+// ---- Audio ----
+let audioCtx;
+function playAlarm() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const times = [0, 0.3, 0.6];
+    times.forEach(t => {
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + t);
+      osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + t + 0.25);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + t + 0.28);
+      osc.start(audioCtx.currentTime + t);
+      osc.stop(audioCtx.currentTime + t + 0.3);
+    });
+  } catch(e) { console.warn("Audio error:", e); }
+}
+
+// ---- Toast ----
+function showToast(icon, title, msg, isError = false) {
+  const toast = document.getElementById("toast");
+  document.getElementById("toast-icon").textContent  = icon;
+  document.getElementById("toast-title").textContent = title;
+  document.getElementById("toast-msg").textContent   = msg;
+  toast.style.borderColor = isError ? "rgba(255,59,92,0.4)" : "rgba(0,229,255,0.2)";
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 4000);
+}
+
+// ---- Log ----
+function addLog(type, message) {
+  const empty = logList.querySelector(".empty-log");
+  if (empty) empty.remove();
+  const now  = new Date();
+  const time = now.toLocaleTimeString("es-CO", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+  const li   = document.createElement("li");
+  li.className = `log-item ${type}-log`;
+  li.innerHTML = `
+    <div class="log-dot"></div>
+    <span class="log-time">${time}</span>
+    <span>${message}</span>
+  `;
+  logList.insertBefore(li, logList.firstChild);
+}
+
+// ---- Send email via Formspree ----
+async function sendAlert(closedDuration) {
+  const email    = document.getElementById("email-input").value.trim();
+  const formUrl  = document.getElementById("formspree-url").value.trim();
+
+  if (!email || !formUrl) {
+    showToast("⚠️", "Configura tu correo", "Ingresa un correo de destino válido", true);
+    return;
+  }
+
+  const body = {
+    email,
+    subject:  "🚨 ALERTA: Somnolencia detectada en conductor",
+    message:  `Se detectó somnolencia.\n\nEl conductor mantuvo los ojos cerrados durante ${closedDuration.toFixed(1)} segundos.\n\nHora: ${new Date().toLocaleString("es-CO")}\n\nEste es un mensaje automático del sistema DriveSafe AI.`
+  };
+
+  try {
+    const res = await fetch(formUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      alertCount++;
+      statAlertas.textContent = alertCount;
+      showToast("📧", "Alerta enviada", `Correo enviado a ${email}`);
+      addLog("alert", `Alerta enviada — ojos cerrados ${closedDuration.toFixed(1)}s`);
+    } else {
+      showToast("❌", "Error al enviar", "Verifica tu URL de Formspree", true);
+    }
+  } catch(err) {
+    showToast("❌", "Error de red", err.message, true);
+  }
+}
+
+// ---- START ----
+async function startMonitoring() {
+  btnStart.disabled = true;
+  btnStart.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" opacity="0.3"/></svg> Cargando...`;
+
+  try {
+    const modelURL    = MODEL_URL + "model.json";
+    const metadataURL = MODEL_URL + "metadata.json";
+
+    model = await tmImage.load(modelURL, metadataURL);
+    maxPredictions = model.getTotalClasses();
+
+    const flip = true;
+    webcam = new tmImage.Webcam(640, 400, flip);
+    await webcam.setup();
+    await webcam.play();
+
+    // Mount canvas
+    placeholder.style.display = "none";
+    document.getElementById("webcam-container").appendChild(webcam.canvas);
+
+    isRunning    = true;
+    sessionStart = Date.now();
+    alertSent    = false;
+    closedSeconds = 0;
+    closedStartTime = null;
+
+    // Session timer
+    sessionInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+      statTiempo.textContent = elapsed + "s";
+    }, 1000);
+
+    // Status
+    statusPill.className = "status-pill active";
+    statusText.textContent = "Activo";
+    btnStart.disabled = true;
+    btnStop.disabled  = false;
+
+    addLog("info", "Sesión iniciada");
+    loop();
+
+  } catch(err) {
+    console.error(err);
+    showToast("❌", "Error al cargar", "Verifica la URL del modelo en el código JS", true);
+    btnStart.disabled = false;
+    btnStart.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Iniciar`;
+  }
+}
+
+// ---- LOOP ----
+async function loop() {
+  if (!isRunning) return;
+  webcam.update();
+  await predict();
+  animFrameId = requestAnimationFrame(loop);
+}
+
+// ---- PREDICT ----
+async function predict() {
+  const threshold = parseFloat(document.getElementById("threshold-input").value) || 3;
+  const preds     = await model.predict(webcam.canvas);
+
+  let openConf   = 0;
+  let closedConf = 0;
+
+  preds.forEach(p => {
+    const name = p.className.trim();
+    if (name === CLASS_OPEN)   openConf   = p.probability;
+    if (name === CLASS_CLOSED) closedConf = p.probability;
+  });
+
+  // Update bars
+  const oPct = Math.round(openConf * 100);
+  const cPct = Math.round(closedConf * 100);
+  barOpen.style.width   = oPct + "%";
+  barClosed.style.width = cPct + "%";
+  pctOpen.textContent   = oPct + "%";
+  pctClosed.textContent = cPct + "%";
+
+  const now = Date.now();
+
+  if (closedConf >= CONFIDENCE_THRESHOLD) {
+    // Eyes closed
+    statEstado.textContent = "Cerrados";
+    statEstado.className   = "stat-value danger";
+
+    if (!closedStartTime) closedStartTime = now;
+    closedSeconds = (now - closedStartTime) / 1000;
+
+    timerEl.textContent = closedSeconds.toFixed(1) + "s";
+    timerEl.className   = closedSeconds >= 1.5 ? "danger" : "";
+
+    if (closedSeconds > maxClosed) {
+      maxClosed = closedSeconds;
+      statMax.textContent = maxClosed.toFixed(1) + "s";
+    }
+
+    if (closedSeconds >= threshold) {
+      alertOverlay.classList.add("visible");
+      statusPill.className   = "status-pill danger";
+      statusText.textContent = "¡ALERTA!";
+
+      if (!alertSent) {
+        alertSent = true;
+        playAlarm();
+        sendAlert(closedSeconds);
+      }
+    }
+
+  } else if (openConf >= CONFIDENCE_THRESHOLD) {
+    // Eyes open
+    statEstado.textContent = "Abiertos";
+    statEstado.className   = "stat-value safe";
+
+    closedStartTime = null;
+    closedSeconds   = 0;
+    alertSent       = false;
+
+    timerEl.textContent = "0.0s";
+    timerEl.className   = "";
+
+    alertOverlay.classList.remove("visible");
+    statusPill.className   = "status-pill active";
+    statusText.textContent = "Activo";
+  }
+}
+
+// ---- STOP ----
+function stopMonitoring() {
+  isRunning = false;
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  if (sessionInterval) clearInterval(sessionInterval);
+  if (webcam) { webcam.stop(); }
+
+  // Remove canvas
+  const container = document.getElementById("webcam-container");
+  const canvases  = container.querySelectorAll("canvas");
+  canvases.forEach(c => c.remove());
+  placeholder.style.display = "flex";
+
+  alertOverlay.classList.remove("visible");
+  statusPill.className   = "status-pill";
+  statusText.textContent = "Inactivo";
+  timerEl.textContent    = "0.0s";
+  timerEl.className      = "";
+  statEstado.textContent = "—";
+
+  btnStart.disabled = false;
+  btnStart.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Iniciar`;
+  btnStop.disabled  = true;
+
+  addLog("info", "Sesión detenida");
+  showToast("⏹️", "Monitoreo detenido", `${alertCount} alerta(s) en esta sesión`);
+}
+</script>
+
+</body>
+</html>
