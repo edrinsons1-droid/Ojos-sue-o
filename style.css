@@ -14,6 +14,9 @@
     --danger: #ef4444;
     --danger-bg: rgba(239, 68, 68, 0.15);
     
+    --neutral: #9ca3af;
+    --neutral-bg: rgba(156, 163, 175, 0.15);
+    
     --accent: #6366f1;
     --accent-hover: #4f46e5;
 }
@@ -179,6 +182,13 @@ header h1 {
     color: var(--success);
     border: 2px solid var(--success);
     box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.status-badge.neutral {
+    background-color: var(--neutral-bg);
+    color: var(--neutral);
+    border: 2px solid var(--neutral);
+    box-shadow: 0 0 20px rgba(156, 163, 175, 0.2);
 }
 
 .status-badge.warning {
